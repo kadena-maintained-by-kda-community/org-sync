@@ -1,0 +1,39 @@
+name: Sync all forks to exact upstream
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SYNC_APP_ID }}
+          private-key: ${{ secrets.SYNC_APP_PRIVATE_KEY }}
+          owner: kadena-maintained-by-kda-community
+
+      - name: Sync every fork
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          ORG="kadena-maintained-by-kda-community"
+          UPSTREAM="kda-community"
+
+          gh repo list "$ORG" --fork --limit 1000 --json name,parent \
+            -q '.[] | select(.parent.owner.login=="'"$UPSTREAM"'") | "\(.name) \(.parent.name)"' |
+          while read -r local_repo upstream_repo; do
+            echo "Mirroring $ORG/$local_repo <- $UPSTREAM/$upstream_repo"
+            
+            gh repo sync "$ORG/$local_repo" \
+              --source "$UPSTREAM/$upstream_repo" \
+              --force || echo "FAILED: $local_repo"
+          done
